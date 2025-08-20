@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Heart, Smile, Meh, Frown, Calendar, TrendingUp } from 'lucide-react';
 import { User } from '../types';
 
@@ -11,6 +11,9 @@ const MoodTracker: React.FC<MoodTrackerProps> = ({ user }) => {
   const [selectedEmotions, setSelectedEmotions] = useState<string[]>([]);
   const [notes, setNotes] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
+  const [recentMoods, setRecentMoods] = useState<any[]>([]); // To store fetched data
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const moodEmojis = [
     { value: 1, emoji: '😢', label: 'Very Low', color: 'text-red-500' },
@@ -30,21 +33,73 @@ const MoodTracker: React.FC<MoodTrackerProps> = ({ user }) => {
     'Stressed', 'Grateful', 'Lonely', 'Confident', 'Overwhelmed', 'Hopeful'
   ];
 
-  const recentMoods = [
-    { date: '2024-01-13', mood: 8, emotions: ['Happy', 'Grateful'], notes: 'Great day at work' },
-    { date: '2024-01-12', mood: 6, emotions: ['Neutral', 'Tired'], notes: 'Regular day' },
-    { date: '2024-01-11', mood: 7, emotions: ['Excited', 'Confident'], notes: 'Presentation went well' },
-    { date: '2024-01-10', mood: 5, emotions: ['Anxious', 'Stressed'], notes: 'Busy day with deadlines' },
-    { date: '2024-01-09', mood: 9, emotions: ['Happy', 'Peaceful'], notes: 'Weekend relaxation' },
-    { date: '2024-01-08', mood: 7, emotions: ['Content', 'Social'], notes: 'Time with friends' },
-    { date: '2024-01-07', mood: 4, emotions: ['Sad', 'Lonely'], notes: 'Missing family' }
-  ];
+  // Fetch recent mood entries from the dashboard API
+  useEffect(() => {
+    const fetchMoods = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const response = await fetch(`http://localhost/ai_companion_backend/api/dashboard.php?user_id=${user.id}`);
+        if (!response.ok) {
+          throw new Error('Failed to fetch mood history.');
+        }
+        const data = await response.json();
+        setRecentMoods(data.mood_entries);
+      } catch (err) {
+        console.error("API call failed:", err);
+        setError("Failed to load mood history.");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    if (user && user.id) {
+        fetchMoods();
+    }
+  }, [user.id]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Here you would save to your backend
-    setShowSuccess(true);
-    setTimeout(() => setShowSuccess(false), 3000);
+    setError(null);
+
+    const moodData = {
+      user_id: user.id,
+      mood: selectedMood,
+      // You'll need to do sentiment analysis on the backend or here
+      // For now, we'll use a simple mapping for the sentiment field
+      sentiment: selectedMood >= 6 ? 'positive' : selectedMood <= 4 ? 'negative' : 'neutral',
+      entry_text: notes,
+      emotions: selectedEmotions.join(', ') // Save emotions as a comma-separated string
+    };
+
+    try {
+      const response = await fetch('http://localhost/ai_companion_backend/api/mood.php', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(moodData),
+      });
+
+      const result = await response.json();
+      if (response.ok) {
+        setShowSuccess(true);
+        // Reset form fields
+        setSelectedMood(5);
+        setSelectedEmotions([]);
+        setNotes('');
+        // Re-fetch mood history to show the new entry
+        const updatedMoodsResponse = await fetch(`http://localhost/ai_companion_backend/api/dashboard.php?user_id=${user.id}`);
+        const updatedMoodsData = await updatedMoodsResponse.json();
+        setRecentMoods(updatedMoodsData.mood_entries);
+        
+        setTimeout(() => setShowSuccess(false), 3000);
+      } else {
+        setError(result.message || 'Failed to save mood entry.');
+      }
+    } catch (err) {
+      console.error("API call failed:", err);
+      setError("Failed to save mood. Please try again.");
+    }
   };
 
   const toggleEmotion = (emotion: string) => {
@@ -54,8 +109,19 @@ const MoodTracker: React.FC<MoodTrackerProps> = ({ user }) => {
         : [...prev, emotion]
     );
   };
+  
+  // Calculate average mood from fetched data
+  const averageMood = recentMoods.length > 0
+    ? recentMoods.reduce((sum, entry) => sum + parseInt(entry.mood), 0) / recentMoods.length
+    : 0;
 
-  const averageMood = recentMoods.reduce((sum, entry) => sum + entry.mood, 0) / recentMoods.length;
+  if (isLoading) {
+    return <div className="text-center py-10 text-gray-500">Loading mood history...</div>;
+  }
+
+  if (error) {
+    return <div className="text-center py-10 text-red-500">{error}</div>;
+  }
 
   return (
     <div className="space-y-6">
@@ -84,7 +150,6 @@ const MoodTracker: React.FC<MoodTrackerProps> = ({ user }) => {
                 </button>
               ))}
             </div>
-            
             <div className="mt-3 text-center">
               <span className={`text-lg font-medium ${moodEmojis[selectedMood - 1]?.color || 'text-gray-600'}`}>
                 {moodEmojis[selectedMood - 1]?.label} ({selectedMood}/10)
@@ -159,14 +224,15 @@ const MoodTracker: React.FC<MoodTrackerProps> = ({ user }) => {
                   <div className="text-xl">{moodEmojis[entry.mood - 1]?.emoji}</div>
                   <div>
                     <div className="font-medium text-gray-900">
-                      {new Date(entry.date).toLocaleDateString('en-US', { 
-                        weekday: 'short', 
-                        month: 'short', 
-                        day: 'numeric' 
+                      {new Date(entry.created_at).toLocaleDateString('en-US', {
+                        weekday: 'short',
+                        month: 'short',
+                        day: 'numeric'
                       })}
                     </div>
+                    {/* Assuming you store emotions in the database and pass them here */}
                     <div className="text-xs text-gray-500">
-                      {entry.emotions.join(', ')}
+                       {/* You'll need to parse emotions if saved as a string, e.g., entry.emotions?.split(',').join(', ') */}
                     </div>
                   </div>
                 </div>
@@ -200,11 +266,11 @@ const MoodTracker: React.FC<MoodTrackerProps> = ({ user }) => {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="text-center p-3 bg-yellow-50 rounded-lg">
-                <div className="text-xl font-bold text-yellow-600">12</div>
+                <div className="text-xl font-bold text-yellow-600">{/* Dynamically calculate day streak */}</div>
                 <div className="text-sm text-yellow-700">Day Streak</div>
               </div>
               <div className="text-center p-3 bg-green-50 rounded-lg">
-                <div className="text-xl font-bold text-green-600">85%</div>
+                <div className="text-xl font-bold text-green-600">{/* Dynamically calculate check-in rate */}</div>
                 <div className="text-sm text-green-700">Check-in Rate</div>
               </div>
             </div>
@@ -212,14 +278,7 @@ const MoodTracker: React.FC<MoodTrackerProps> = ({ user }) => {
             <div>
               <h4 className="font-medium text-gray-900 mb-2">Most Common Emotions</h4>
               <div className="flex flex-wrap gap-2">
-                {['Happy', 'Grateful', 'Content', 'Excited'].map((emotion) => (
-                  <span
-                    key={emotion}
-                    className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs"
-                  >
-                    {emotion}
-                  </span>
-                ))}
+                 {/* Dynamically calculate and display common emotions */}
               </div>
             </div>
           </div>

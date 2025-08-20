@@ -1,9 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Target, Plus, CheckCircle, Circle, Trash2, Calendar, TrendingUp } from 'lucide-react';
 import { User, Goal } from '../types';
 
 interface GoalTrackerProps {
   user: User;
+}
+
+// Define the shape of the data we expect from the backend
+interface DashboardData {
+  mood_entries: any[];
+  journal_entries: any[];
+  goals: Goal[];
 }
 
 const GoalTracker: React.FC<GoalTrackerProps> = ({ user }) => {
@@ -14,57 +21,29 @@ const GoalTracker: React.FC<GoalTrackerProps> = ({ user }) => {
     category: 'mindfulness' as Goal['category'],
     targetDays: 7
   });
+  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const [goals, setGoals] = useState<Goal[]>([
-    {
-      id: '1',
-      userId: user.id,
-      title: 'Daily Mindfulness',
-      description: 'Practice 10 minutes of mindfulness or meditation',
-      targetDays: 7,
-      currentStreak: 5,
-      completedDays: 12,
-      category: 'mindfulness',
-      isActive: true,
-      createdAt: '2024-01-07'
-    },
-    {
-      id: '2',
-      userId: user.id,
-      title: 'Gratitude Journal',
-      description: 'Write down 3 things I\'m grateful for each day',
-      targetDays: 14,
-      currentStreak: 8,
-      completedDays: 8,
-      category: 'journaling',
-      isActive: true,
-      createdAt: '2024-01-06'
-    },
-    {
-      id: '3',
-      userId: user.id,
-      title: 'Better Sleep Schedule',
-      description: 'Go to bed before 11 PM and get 7+ hours of sleep',
-      targetDays: 10,
-      currentStreak: 3,
-      completedDays: 15,
-      category: 'sleep',
-      isActive: true,
-      createdAt: '2024-01-01'
-    },
-    {
-      id: '4',
-      userId: user.id,
-      title: 'Social Connection',
-      description: 'Reach out to a friend or family member',
-      targetDays: 7,
-      currentStreak: 0,
-      completedDays: 4,
-      category: 'social',
-      isActive: false,
-      createdAt: '2024-01-05'
-    }
-  ]);
+  // Fetch goals from the backend when the component mounts
+  useEffect(() => {
+    const fetchGoals = async () => {
+      try {
+        const response = await fetch(`http://localhost/ai_companion_backend/api/dashboard.php?user_id=${user.id}`);
+        if (!response.ok) {
+          throw new Error('Failed to fetch goals.');
+        }
+        const data = await response.json();
+        setDashboardData(data); // Store the entire dashboard object
+      } catch (err) {
+        setError("Failed to load goals. Please try again.");
+        console.error("API call failed:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchGoals();
+  }, [user.id]);
 
   const categories = [
     { value: 'mindfulness', label: 'Mindfulness', color: 'bg-purple-100 text-purple-700', icon: '🧘' },
@@ -78,38 +57,114 @@ const GoalTracker: React.FC<GoalTrackerProps> = ({ user }) => {
     return categories.find(cat => cat.value === category) || categories[0];
   };
 
-  const handleAddGoal = (e: React.FormEvent) => {
+  const handleAddGoal = async (e: React.FormEvent) => {
     e.preventDefault();
-    const goal: Goal = {
-      id: Date.now().toString(),
-      userId: user.id,
-      ...newGoal,
-      currentStreak: 0,
-      completedDays: 0,
-      isActive: true,
-      createdAt: new Date().toISOString()
+    setError(null);
+
+    const goalData = {
+      user_id: user.id,
+      title: newGoal.title,
+      description: newGoal.description,
+      target_days: newGoal.targetDays, // Matches backend snake_case
+      category: newGoal.category
     };
-    
-    setGoals(prev => [...prev, goal]);
-    setNewGoal({ title: '', description: '', category: 'mindfulness', targetDays: 7 });
-    setShowAddGoal(false);
+
+    try {
+      const response = await fetch('http://localhost/ai_companion_backend/api/goals.php', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(goalData),
+      });
+
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.message || 'Failed to add goal.');
+      }
+      
+      // Re-fetch goals to update the UI
+      const updatedGoalsResponse = await fetch(`http://localhost/ai_companion_backend/api/dashboard.php?user_id=${user.id}`);
+      const updatedData = await updatedGoalsResponse.json();
+      setDashboardData(updatedData);
+
+      setNewGoal({ title: '', description: '', category: 'mindfulness', targetDays: 7 });
+      setShowAddGoal(false);
+
+    } catch (err) {
+      console.error("API call failed:", err);
+      setError("Failed to add goal. Please try again.");
+    }
   };
 
-  const toggleGoalCompletion = (goalId: string) => {
-    setGoals(prev => prev.map(goal => 
-      goal.id === goalId 
-        ? { 
-            ...goal, 
-            currentStreak: goal.currentStreak + 1,
-            completedDays: goal.completedDays + 1
-          }
-        : goal
-    ));
+  const toggleGoalCompletion = async (goalId: string) => {
+    setError(null);
+    try {
+      const goalToUpdate = dashboardData?.goals.find(g => g.id === goalId);
+      if (!goalToUpdate) return;
+
+      const response = await fetch('http://localhost/ai_companion_backend/api/goals.php', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'update_completion',
+          goal_id: goalId,
+          is_completed: !goalToUpdate.is_completed
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update goal completion.');
+      }
+      
+      // Re-fetch to update the UI
+      const updatedGoalsResponse = await fetch(`http://localhost/ai_companion_backend/api/dashboard.php?user_id=${user.id}`);
+      const updatedData = await updatedGoalsResponse.json();
+      setDashboardData(updatedData);
+
+    } catch (err) {
+      console.error("API call failed:", err);
+      setError("Failed to update goal. Please try again.");
+    }
   };
 
-  const deleteGoal = (goalId: string) => {
-    setGoals(prev => prev.filter(goal => goal.id !== goalId));
+  const deleteGoal = async (goalId: string) => {
+    setError(null);
+    try {
+      const response = await fetch('http://localhost/ai_companion_backend/api/goals.php', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ goal_id: goalId }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to delete goal.');
+      }
+      
+      // Re-fetch to update the UI
+      const updatedGoalsResponse = await fetch(`http://localhost/ai_companion_backend/api/dashboard.php?user_id=${user.id}`);
+      const updatedData = await updatedGoalsResponse.json();
+      setDashboardData(updatedData);
+      
+    } catch (err) {
+      console.error("API call failed:", err);
+      setError("Failed to delete goal. Please try again.");
+    }
   };
+  
+  // 💥 CHECK FOR LOADING STATE HERE 💥
+  if (isLoading) {
+    return <div className="text-center py-10 text-gray-500">Loading your goals...</div>;
+  }
+  
+  if (error) {
+    return <div className="text-center py-10 text-red-500">{error}</div>;
+  }
+
+  // Safely access the goals array from the dashboardData object
+  const goals = dashboardData?.goals || [];
 
   const activeGoals = goals.filter(goal => goal.isActive);
   const completedGoals = goals.filter(goal => !goal.isActive);
@@ -139,7 +194,7 @@ const GoalTracker: React.FC<GoalTrackerProps> = ({ user }) => {
         </div>
         <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
           <div className="text-2xl font-bold text-green-600">
-            {Math.round(activeGoals.reduce((sum, goal) => sum + (goal.currentStreak / goal.targetDays), 0) / activeGoals.length * 100 || 0)}%
+            {activeGoals.length > 0 ? `${Math.round(activeGoals.reduce((sum, goal) => sum + (goal.currentStreak / goal.targetDays), 0) / activeGoals.length * 100)}%` : '0%'}
           </div>
           <div className="text-sm text-gray-600">Avg Progress</div>
         </div>

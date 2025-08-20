@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Users, AlertTriangle, TrendingDown, TrendingUp, Calendar, Brain, Heart, Activity } from 'lucide-react';
 import { User } from '../types';
 
@@ -6,110 +6,87 @@ interface CounselorDashboardProps {
   user: User;
 }
 
+// Define data types for the fetched data
+interface PatientData {
+  id: string;
+  name: string;
+  moodTrend: string;
+  riskLevel: string;
+  averageMood: number;
+  streak: number;
+  recentAlerts: number;
+  lastActivity?: string;
+  nextSession?: string;
+}
+
+interface AlertData {
+  name: string;
+  message: string;
+  severity: string;
+  time: string;
+}
+
+interface DashboardStats {
+  total_patients: number;
+  active_alerts: number;
+}
+
 const CounselorDashboard: React.FC<CounselorDashboardProps> = ({ user }) => {
   const [selectedPatient, setSelectedPatient] = useState<string | null>(null);
+  const [patients, setPatients] = useState<PatientData[]>([]);
+  const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(null);
+  const [recentAlerts, setRecentAlerts] = useState<AlertData[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const patients = [
-    {
-      id: '1',
-      name: 'Sarah Johnson',
-      lastActivity: '2 hours ago',
-      moodTrend: 'stable',
-      riskLevel: 'low',
-      averageMood: 7.2,
-      streak: 14,
-      nextSession: '2024-01-15',
-      recentAlerts: 0
-    },
-    {
-      id: '2',
-      name: 'Michael Chen',
-      lastActivity: '5 hours ago',
-      moodTrend: 'improving',
-      riskLevel: 'low',
-      averageMood: 6.8,
-      streak: 7,
-      nextSession: '2024-01-16',
-      recentAlerts: 1
-    },
-    {
-      id: '3',
-      name: 'Emma Rodriguez',
-      lastActivity: '1 day ago',
-      moodTrend: 'declining',
-      riskLevel: 'moderate',
-      averageMood: 5.1,
-      streak: 3,
-      nextSession: '2024-01-14',
-      recentAlerts: 3
-    },
-    {
-      id: '4',
-      name: 'David Kim',
-      lastActivity: '3 hours ago',
-      moodTrend: 'stable',
-      riskLevel: 'low',
-      averageMood: 8.0,
-      streak: 21,
-      nextSession: '2024-01-17',
-      recentAlerts: 0
-    }
-  ];
+  useEffect(() => {
+    const fetchDashboardData = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const response = await fetch(`http://localhost/ai_companion_backend/api/counselor_dashboard.php?counselor_id=${user.id}`);
+        if (!response.ok) {
+          throw new Error('Network response was not ok');
+        }
+        const data = await response.json();
+        
+        // Map the backend data to your frontend interfaces
+        const fetchedPatients = data.patients.map((p: any) => ({
+            id: p.id,
+            name: p.username,
+            moodTrend: p.moodTrend,
+            riskLevel: p.riskLevel,
+            averageMood: 7.0, // This needs to be calculated in the backend
+            streak: p.streak,
+            lastActivity: "Just now", // Placeholder
+            recentAlerts: p.recentAlerts,
+            nextSession: "2024-01-15" // Placeholder
+        }));
 
-  const dashboardStats = [
-    {
-      title: 'Total Patients',
-      value: patients.length,
-      icon: Users,
-      color: 'from-blue-400 to-blue-600',
-      description: 'Under your care'
-    },
-    {
-      title: 'Active Alerts',
-      value: patients.reduce((sum, p) => sum + p.recentAlerts, 0),
-      icon: AlertTriangle,
-      color: 'from-yellow-400 to-yellow-600',
-      description: 'Requiring attention'
-    },
-    {
-      title: 'Avg Wellness',
-      value: '7.0',
-      icon: Heart,
-      color: 'from-green-400 to-green-600',
-      description: 'Across all patients'
-    },
-    {
-      title: 'Sessions Today',
-      value: 3,
-      icon: Calendar,
-      color: 'from-purple-400 to-purple-600',
-      description: 'Scheduled sessions'
-    }
-  ];
+        setPatients(fetchedPatients);
+        setDashboardStats(data.dashboardStats);
+        setRecentAlerts(data.recentAlerts.map((a: any) => ({
+            patientName: a.name,
+            message: a.message,
+            severity: a.severity,
+            time: "just now" // Placeholder
+        })));
+        
+      } catch (err) {
+        console.error("Failed to fetch counselor data:", err);
+        setError("Failed to load dashboard data.");
+      } finally {
+        setIsLoading(false);
+      }
+    };
 
-  const recentAlerts = [
-    {
-      patientName: 'Emma Rodriguez',
-      type: 'mood_pattern',
-      message: 'Declining mood pattern detected over the past week',
-      time: '2 hours ago',
-      severity: 'moderate'
-    },
-    {
-      patientName: 'Michael Chen',
-      type: 'goal_milestone',
-      message: 'Completed 7-day mindfulness streak',
-      time: '5 hours ago',
-      severity: 'low'
-    },
-    {
-      patientName: 'Emma Rodriguez',
-      type: 'crisis_detected',
-      message: 'Language suggesting heightened stress detected',
-      time: '1 day ago',
-      severity: 'high'
+    if (user && user.role === 'counselor') {
+      fetchDashboardData();
     }
-  ];
+  }, [user]);
+  
+  // You would need another API call here to fetch detailed patient data
+  // when a patient is selected, and then display it in the modal.
 
   const getRiskLevelColor = (level: string) => {
     switch (level) {
@@ -127,6 +104,9 @@ const CounselorDashboard: React.FC<CounselorDashboardProps> = ({ user }) => {
     }
   };
 
+  if (isLoading) return <div>Loading dashboard...</div>;
+  if (error) return <div className="text-red-500">{error}</div>;
+
   return (
     <div className="space-y-6">
       {/* Welcome Section */}
@@ -135,7 +115,7 @@ const CounselorDashboard: React.FC<CounselorDashboardProps> = ({ user }) => {
           <div>
             <h1 className="text-2xl font-bold mb-2">Good morning, {user.name}</h1>
             <p className="text-indigo-100">
-              You have 3 sessions scheduled today and 4 patients requiring attention.
+              You have {dashboardStats?.active_alerts} patients requiring attention.
             </p>
           </div>
           <div className="hidden md:block">
@@ -148,16 +128,23 @@ const CounselorDashboard: React.FC<CounselorDashboardProps> = ({ user }) => {
 
       {/* Dashboard Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {dashboardStats.map((stat, index) => (
-          <div key={index} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-            <div className={`w-10 h-10 bg-gradient-to-br ${stat.color} rounded-lg flex items-center justify-center mb-3`}>
-              <stat.icon className="w-5 h-5 text-white" />
-            </div>
-            <div className="text-2xl font-bold text-gray-900 mb-1">{stat.value}</div>
-            <div className="text-sm font-medium text-gray-700 mb-1">{stat.title}</div>
-            <div className="text-xs text-gray-500">{stat.description}</div>
+        <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+          <div className={`w-10 h-10 bg-gradient-to-br from-blue-400 to-blue-600 rounded-lg flex items-center justify-center mb-3`}>
+            <Users className="w-5 h-5 text-white" />
           </div>
-        ))}
+          <div className="text-2xl font-bold text-gray-900 mb-1">{dashboardStats?.total_patients}</div>
+          <div className="text-sm font-medium text-gray-700 mb-1">Total Patients</div>
+          <div className="text-xs text-gray-500">Under your care</div>
+        </div>
+        <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+          <div className={`w-10 h-10 bg-gradient-to-br from-yellow-400 to-yellow-600 rounded-lg flex items-center justify-center mb-3`}>
+            <AlertTriangle className="w-5 h-5 text-white" />
+          </div>
+          <div className="text-2xl font-bold text-gray-900 mb-1">{dashboardStats?.active_alerts}</div>
+          <div className="text-sm font-medium text-gray-700 mb-1">Active Alerts</div>
+          <div className="text-xs text-gray-500">Requiring attention</div>
+        </div>
+        {/* Placeholder for other stats */}
       </div>
 
       <div className="grid lg:grid-cols-3 gap-6">
@@ -197,7 +184,6 @@ const CounselorDashboard: React.FC<CounselorDashboardProps> = ({ user }) => {
                       </div>
                     </div>
                   </div>
-
                   <div className="text-right space-y-2">
                     <div className={`px-2 py-1 text-xs rounded-full border ${getRiskLevelColor(patient.riskLevel)}`}>
                       {patient.riskLevel} risk
@@ -209,7 +195,7 @@ const CounselorDashboard: React.FC<CounselorDashboardProps> = ({ user }) => {
                       </div>
                     )}
                     <div className="text-xs text-gray-500">
-                      Next: {new Date(patient.nextSession).toLocaleDateString()}
+                      Next: {patient.nextSession}
                     </div>
                   </div>
                 </div>
@@ -250,7 +236,7 @@ const CounselorDashboard: React.FC<CounselorDashboardProps> = ({ user }) => {
         </div>
       </div>
 
-      {/* Patient Detail Modal */}
+      {/* Patient Detail Modal (This part will need a dedicated API call to populate) */}
       {selectedPatient && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[80vh] overflow-y-auto">
@@ -271,6 +257,8 @@ const CounselorDashboard: React.FC<CounselorDashboardProps> = ({ user }) => {
             </div>
             
             <div className="p-6 space-y-6">
+              {/* This section still uses hard-coded demo data.
+              To make this dynamic, you'll need another API call to get details for the `selectedPatient`. */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="p-4 bg-blue-50 rounded-lg">
                   <h3 className="font-medium text-blue-900 mb-1">Weekly Average Mood</h3>

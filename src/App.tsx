@@ -3,7 +3,7 @@ import { Heart, Brain, Users, Shield, Settings, Menu, X } from 'lucide-react';
 import AuthPage from './components/AuthPage';
 import PatientDashboard from './components/PatientDashboard';
 import CounselorDashboard from './components/CounselorDashboard';
-import { User, AuthState } from './types';
+import { User, AuthState } from './types'; // Corrected import path
 
 function App() {
   const [authState, setAuthState] = useState<AuthState>({
@@ -15,23 +15,41 @@ function App() {
   const [showMenu, setShowMenu] = useState(false);
 
   useEffect(() => {
-    // Simulate checking for existing auth
-    const timer = setTimeout(() => {
+    // Check for user data in localStorage on app load
+    try {
+      const storedUser = localStorage.getItem('user_data');
+      if (storedUser) {
+        const user: User = JSON.parse(storedUser);
+        setAuthState({
+          isAuthenticated: true,
+          user,
+          loading: false
+        });
+      } else {
+        setAuthState(prev => ({ ...prev, loading: false }));
+      }
+    } catch (err) {
+      // Handle potential JSON parsing errors
+      console.error("Failed to parse user data from localStorage:", err);
+      localStorage.removeItem('user_data');
       setAuthState(prev => ({ ...prev, loading: false }));
-    }, 1000);
-
-    return () => clearTimeout(timer);
+    }
   }, []);
 
   const handleLogin = (user: User) => {
+    // This is called by the AuthPage on successful login
     setAuthState({
       isAuthenticated: true,
       user,
       loading: false
     });
+    // The AuthPage now handles saving to localStorage, but we can double-check here
+    localStorage.setItem('user_data', JSON.stringify(user));
   };
 
   const handleLogout = () => {
+    // Clear user data from both state and localStorage
+    localStorage.removeItem('user_data');
     setAuthState({
       isAuthenticated: false,
       user: null,
@@ -131,10 +149,13 @@ function App() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {authState.user?.role === 'patient' ? (
+        {authState.user?.role === 'patient' && authState.user ? (
           <PatientDashboard user={authState.user} />
-        ) : (
+        ) : authState.user?.role === 'counselor' && authState.user ? (
           <CounselorDashboard user={authState.user} />
+        ) : (
+            // Fallback for an unexpected state
+            <AuthPage onLogin={handleLogin} />
         )}
       </main>
     </div>
