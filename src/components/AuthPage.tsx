@@ -7,14 +7,15 @@ interface AuthPageProps {
 }
 
 const AuthPage: React.FC<AuthPageProps> = ({ onLogin }) => {
-  const [isLogin, setIsLogin] = useState(true);
+  const [isLogin, setIsLogin] = useState(true); // 💥 Ensure this is set to true
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     email: '',
     password: '',
     name: '',
-    role: 'patient' as 'patient' | 'counselor'
+    role: 'patient' as 'patient' | 'counselor',
+    primary_concern: 'Anxiety'
   });
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -24,7 +25,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLogin }) => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null); // Clear previous errors
+    setError(null);
 
     const action = isLogin ? 'login' : 'signup';
     const body = {
@@ -32,7 +33,8 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLogin }) => {
       email: formData.email,
       password: formData.password,
       username: formData.name || formData.email.split('@')[0],
-      role: formData.role
+      role: formData.role,
+      primary_concern: formData.primary_concern
     };
 
     try {
@@ -46,13 +48,11 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLogin }) => {
 
       if (response.ok) {
         if (action === 'signup') {
-          // If signup is successful, automatically log in the new user
           const loginResponse = await fetch('http://localhost/ai_companion_backend/api/auth.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'login', username: body.username, password: body.password }),
           });
-
           const loginResult = await loginResponse.json();
           if (loginResponse.ok) {
             handleSuccessfulLogin(loginResult.user_id, loginResult.role, body.username, body.email);
@@ -60,7 +60,6 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLogin }) => {
             setError(loginResult.message || 'Signup successful but login failed. Please try logging in.');
           }
         } else {
-          // Handle successful login
           handleSuccessfulLogin(result.user_id, result.role, body.username, body.email);
         }
       } else {
@@ -79,12 +78,10 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLogin }) => {
       email: userEmail,
       role: userRole
     };
-    // Store user data in local storage
     localStorage.setItem('user_data', JSON.stringify(user));
     onLogin(user);
   };
   
-  // Note: demoLogin function is kept for quick testing
   const demoLogin = (role: 'patient' | 'counselor') => {
     const user: User = {
       id: Math.random().toString(36).substr(2, 9),
@@ -94,6 +91,8 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLogin }) => {
     };
     onLogin(user);
   };
+
+  const commonConcerns = ['Anxiety', 'Stress', 'Depression', 'Grief', 'Relationship Issues', 'Work-Life Balance'];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-green-50 flex">
@@ -240,18 +239,35 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLogin }) => {
               </div>
             </div>
             {!isLogin && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Role</label>
-                <select
-                  name="role"
-                  value={formData.role}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
-                >
-                  <option value="patient">Patient</option>
-                  <option value="counselor">Counselor</option>
-                </select>
-              </div>
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Role</label>
+                  <select
+                    name="role"
+                    value={formData.role}
+                    onChange={handleChange}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                  >
+                    <option value="patient">Patient</option>
+                    <option value="counselor">Counselor</option>
+                  </select>
+                </div>
+                {formData.role === 'patient' && ( // 💥 Only show this for patients
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Primary Concern</label>
+                    <select
+                      name="primary_concern"
+                      value={formData.primary_concern}
+                      onChange={handleChange}
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                    >
+                      {commonConcerns.map((concern) => (
+                        <option key={concern} value={concern}>{concern}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </>
             )}
             {error && (
               <div className="text-red-500 text-sm text-center">

@@ -7,17 +7,11 @@ interface AIChatProps {
 }
 
 const AIChat: React.FC<AIChatProps> = ({ user }) => {
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: '1',
-      sender: 'kai',
-      content: `Hi ${user.name}! I'm Kai, your mental health companion. I'm here to listen, support, and help you on your wellness journey. How are you feeling today?`,
-      timestamp: new Date().toISOString(),
-      type: 'text'
-    }
-  ]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -25,44 +19,65 @@ const AIChat: React.FC<AIChatProps> = ({ user }) => {
   };
 
   useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+    // This useEffect handles fetching initial data
+    const fetchInitialData = async () => {
+      setIsLoading(true);
+      setError(null);
 
-  const generateKaiResponse = (userMessage: string): ChatMessage => {
-    // Simple response generation based on keywords
-    const lowerMessage = userMessage.toLowerCase();
-    
-    let response = '';
-    let type: 'text' | 'suggestion' | 'exercise' = 'text';
-    
-    if (lowerMessage.includes('anxious') || lowerMessage.includes('stressed') || lowerMessage.includes('worry')) {
-      response = "I hear that you're feeling anxious. That's completely understandable, and it takes courage to acknowledge these feelings. Would you like to try a quick breathing exercise? I can guide you through a 1-minute technique that many find helpful for managing anxiety in the moment.";
-      type = 'suggestion';
-    } else if (lowerMessage.includes('sad') || lowerMessage.includes('down') || lowerMessage.includes('depressed')) {
-      response = "I'm sorry you're going through a difficult time right now. Your feelings are valid, and it's important that you reached out. Remember, it's okay to not be okay sometimes. What's one small thing that usually brings you a bit of comfort?";
-    } else if (lowerMessage.includes('happy') || lowerMessage.includes('good') || lowerMessage.includes('great')) {
-      response = "That's wonderful to hear! It's beautiful when we can recognize and appreciate the good moments. What specifically is contributing to these positive feelings today? Celebrating these moments, even small ones, is so important for our mental health.";
-    } else if (lowerMessage.includes('tired') || lowerMessage.includes('exhausted') || lowerMessage.includes('sleep')) {
-      response = "It sounds like you might be experiencing some fatigue. Rest is so crucial for our mental and physical well-being. Have you been able to maintain a regular sleep schedule lately? Sometimes small adjustments to our evening routine can make a big difference.";
-    } else if (lowerMessage.includes('work') || lowerMessage.includes('job') || lowerMessage.includes('boss')) {
-      response = "Work-related stress is very common, and it can really impact our overall well-being. It's important to find healthy ways to manage work stress and maintain boundaries. What aspect of work is weighing on you most right now?";
-    } else if (lowerMessage.includes('thank') || lowerMessage.includes('grateful')) {
-      response = "Your gratitude really warms my heart! Practicing gratitude is one of the most powerful tools for mental wellness. It's amazing how acknowledging the good things, no matter how small, can shift our perspective and mood.";
-    } else {
-      response = "Thank you for sharing that with me. Your thoughts and feelings matter, and I'm here to listen without judgment. Can you tell me more about what's on your mind? Sometimes just talking through things can help us process and understand our emotions better.";
-    }
+      try {
+        // First, fetch conversation history
+        const historyResponse = await fetch(`http://localhost/ai_companion_backend/api/conversations.php?user_id=${user.id}`);
+        if (!historyResponse.ok) {
+          throw new Error('Failed to fetch conversation history.');
+        }
+        const historyData = await historyResponse.json();
 
-    return {
-      id: Date.now().toString(),
-      sender: 'kai',
-      content: response,
-      timestamp: new Date().toISOString(),
-      type
+        // If history exists, set it
+        if (historyData.length > 0) {
+          setMessages(historyData);
+        } else {
+          // If no history, make a POST request for a welcome message
+          const welcomeResponse = await fetch('http://localhost/ai_companion_backend/api/ai_chat.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              user_id: user.id,
+              message: 'start_conversation_signal'
+            }),
+          });
+          
+          if (!welcomeResponse.ok) {
+            throw new Error('Failed to get welcome message.');
+          }
+
+          const welcomeResult = await welcomeResponse.json();
+          setMessages([
+            {
+              id: 'welcome-message',
+              sender: 'kai',
+              content: welcomeResult.message,
+              timestamp: new Date().toISOString(),
+              type: 'text'
+            }
+          ]);
+        }
+      } catch (err) {
+        console.error("API call failed:", err);
+        setError("Failed to load chat history. Please check your backend.");
+      } finally {
+        setIsLoading(false);
+      }
     };
-  };
+    fetchInitialData();
+  }, [user.id]);
+  
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, isTyping]);
 
   const handleSendMessage = async () => {
     if (!inputMessage.trim()) return;
+    setError(null);
 
     const userMessage: ChatMessage = {
       id: Date.now().toString(),
@@ -71,17 +86,43 @@ const AIChat: React.FC<AIChatProps> = ({ user }) => {
       timestamp: new Date().toISOString(),
       type: 'text'
     };
-
+    
     setMessages(prev => [...prev, userMessage]);
     setInputMessage('');
     setIsTyping(true);
 
-    // Simulate typing delay
-    setTimeout(() => {
-      const kaiResponse = generateKaiResponse(inputMessage);
+    try {
+      const response = await fetch('http://localhost/ai_companion_backend/api/ai_chat.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: user.id,
+          message: userMessage.content
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to get a response from Kai.');
+      }
+      
+      const result = await response.json();
+      
+      const kaiResponse: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        sender: 'kai',
+        content: result.message,
+        timestamp: new Date().toISOString(),
+        type: 'text'
+      };
+
       setMessages(prev => [...prev, kaiResponse]);
+
+    } catch (err) {
+      console.error("API call failed:", err);
+      setError("Failed to connect to Kai. Please try again.");
+    } finally {
       setIsTyping(false);
-    }, 1500);
+    }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -91,16 +132,24 @@ const AIChat: React.FC<AIChatProps> = ({ user }) => {
     }
   };
 
+  const handleQuickAction = (action: string) => {
+    setInputMessage(action);
+  };
+  
+  if (isLoading) {
+    return <div className="text-center py-10 text-gray-500">Loading conversation...</div>;
+  }
+  
+  if (error) {
+    return <div className="text-center py-10 text-red-500">{error}</div>;
+  }
+  
   const quickActions = [
     { label: 'I need breathing help', icon: Activity, color: 'bg-blue-100 text-blue-700 border-blue-200' },
     { label: 'Feeling anxious', icon: Heart, color: 'bg-purple-100 text-purple-700 border-purple-200' },
     { label: 'Want to journal', icon: Lightbulb, color: 'bg-green-100 text-green-700 border-green-200' },
     { label: 'Having a good day', icon: Heart, color: 'bg-yellow-100 text-yellow-700 border-yellow-200' }
   ];
-
-  const handleQuickAction = (action: string) => {
-    setInputMessage(action);
-  };
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col h-[600px]">
@@ -119,6 +168,11 @@ const AIChat: React.FC<AIChatProps> = ({ user }) => {
 
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {messages.length === 0 && !isLoading && (
+          <div className="text-center text-gray-500 py-10">
+            Start a new conversation with Kai!
+          </div>
+        )}
         {messages.map((message) => (
           <div
             key={message.id}
@@ -179,7 +233,7 @@ const AIChat: React.FC<AIChatProps> = ({ user }) => {
       </div>
 
       {/* Quick Actions */}
-      {messages.length === 1 && (
+      {messages.length <= 1 && (
         <div className="px-4 py-2 border-t border-gray-100">
           <p className="text-xs text-gray-500 mb-2">Quick actions:</p>
           <div className="flex flex-wrap gap-2">

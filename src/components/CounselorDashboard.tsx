@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Users, AlertTriangle, TrendingDown, TrendingUp, Calendar, Brain, Heart, Activity } from 'lucide-react';
+import { Users, AlertTriangle, TrendingDown, TrendingUp, Calendar, Brain, Heart, Activity, Send, BookOpen, Smile, Target } from 'lucide-react';
 import { User } from '../types';
 
 interface CounselorDashboardProps {
   user: User;
 }
 
-// Define data types for the fetched data
 interface PatientData {
   id: string;
   name: string;
@@ -17,6 +16,8 @@ interface PatientData {
   recentAlerts: number;
   lastActivity?: string;
   nextSession?: string;
+  // 💥 Adding a flag to track if consent is given
+  data_access_granted?: boolean;
 }
 
 interface AlertData {
@@ -31,62 +32,135 @@ interface DashboardStats {
   active_alerts: number;
 }
 
+// 💥 Interface for the detailed patient data
+interface PatientDetails {
+  mood_entries: { mood: string; created_at: string; emotions: string }[];
+  journal_entries: { title: string; content: string; created_at: string }[];
+  goals: { description: string; is_completed: boolean }[];
+}
+
+
 const CounselorDashboard: React.FC<CounselorDashboardProps> = ({ user }) => {
-  const [selectedPatient, setSelectedPatient] = useState<string | null>(null);
+  const [selectedPatient, setSelectedPatient] = useState<PatientData | null>(null);
   const [patients, setPatients] = useState<PatientData[]>([]);
   const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(null);
   const [recentAlerts, setRecentAlerts] = useState<AlertData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showSendMessageModal, setShowSendMessageModal] = useState(false);
+  const [messageText, setMessageText] = useState('');
+  const [isSending, setIsSending] = useState(false);
+  const [sendSuccess, setSendSuccess] = useState<string | null>(null);
+  const [selectedPatientDetails, setSelectedPatientDetails] = useState<PatientDetails | null>(null);
+  const [isDetailsLoading, setIsDetailsLoading] = useState(false);
 
-  useEffect(() => {
-    const fetchDashboardData = async () => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const response = await fetch(`http://localhost/ai_companion_backend/api/counselor_dashboard.php?counselor_id=${user.id}`);
+  const fetchDashboardData = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`http://localhost/ai_companion_backend/api/counselor_dashboard.php?counselor_id=${user.id}`);
+      if (!response.ok) {
+        throw new Error('Network response was not ok');
+      }
+      const data = await response.json();
+      
+      const fetchedPatients = (data.patients || []).map((p: any) => ({
+          id: p.id,
+          name: p.username,
+          moodTrend: p.moodTrend,
+          riskLevel: p.riskLevel,
+          averageMood: 7.0, // Placeholder
+          streak: p.streak,
+          lastActivity: "Just now", // Placeholder
+          recentAlerts: p.recentAlerts,
+          nextSession: "2024-01-15", // Placeholder
+          data_access_granted: p.data_access_granted === 1 // 💥 Check consent
+      }));
+
+      setPatients(fetchedPatients);
+      setDashboardStats(data.dashboardStats);
+      setRecentAlerts((data.recentAlerts || []).map((a: any) => ({
+          patientName: a.username,
+          message: a.message,
+          severity: a.severity,
+          time: "just now" // Placeholder
+      })));
+      
+    } catch (err) {
+      console.error("Failed to fetch counselor data:", err);
+      setError("Failed to load dashboard data.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const fetchPatientDetails = async (patientId: string) => {
+    setIsDetailsLoading(true);
+    try {
+        const response = await fetch(`http://localhost/ai_companion_backend/api/patient_details.php?patient_id=${patientId}`);
         if (!response.ok) {
-          throw new Error('Network response was not ok');
+            throw new Error('Failed to fetch patient details.');
         }
         const data = await response.json();
-        
-        // Map the backend data to your frontend interfaces
-        const fetchedPatients = data.patients.map((p: any) => ({
-            id: p.id,
-            name: p.username,
-            moodTrend: p.moodTrend,
-            riskLevel: p.riskLevel,
-            averageMood: 7.0, // This needs to be calculated in the backend
-            streak: p.streak,
-            lastActivity: "Just now", // Placeholder
-            recentAlerts: p.recentAlerts,
-            nextSession: "2024-01-15" // Placeholder
-        }));
+        setSelectedPatientDetails(data);
+    } catch (err) {
+        console.error("Failed to fetch patient details:", err);
+        setError("Failed to load patient details.");
+        setSelectedPatientDetails(null);
+    } finally {
+        setIsDetailsLoading(false);
+    }
+  };
 
-        setPatients(fetchedPatients);
-        setDashboardStats(data.dashboardStats);
-        setRecentAlerts(data.recentAlerts.map((a: any) => ({
-            patientName: a.name,
-            message: a.message,
-            severity: a.severity,
-            time: "just now" // Placeholder
-        })));
-        
-      } catch (err) {
-        console.error("Failed to fetch counselor data:", err);
-        setError("Failed to load dashboard data.");
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
+  useEffect(() => {
     if (user && user.role === 'counselor') {
       fetchDashboardData();
     }
   }, [user]);
-  
-  // You would need another API call here to fetch detailed patient data
-  // when a patient is selected, and then display it in the modal.
+
+  const handlePatientClick = (patient: PatientData) => {
+    setSelectedPatient(patient);
+    if (patient.data_access_granted) {
+      fetchPatientDetails(patient.id);
+    }
+  };
+
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!messageText.trim() || !selectedPatient) return;
+
+    setIsSending(true);
+    setSendSuccess(null);
+    setError(null);
+
+    const messageData = {
+      counselor_id: user.id,
+      patient_id: selectedPatient.id,
+      message: messageText
+    };
+
+    try {
+      const response = await fetch('http://localhost/ai_companion_backend/api/counselor_message.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(messageData),
+      });
+
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.message || 'Failed to send message.');
+      }
+      setSendSuccess('Message sent successfully!');
+      setMessageText('');
+      setTimeout(() => setShowSendMessageModal(false), 2000);
+      
+    } catch (err: any) {
+      console.error("Failed to send message:", err);
+      setError(err.message || "Failed to send message.");
+    } finally {
+      setIsSending(false);
+    }
+  };
 
   const getRiskLevelColor = (level: string) => {
     switch (level) {
@@ -102,6 +176,13 @@ const CounselorDashboard: React.FC<CounselorDashboardProps> = ({ user }) => {
       case 'declining': return <TrendingDown className="w-4 h-4 text-red-500" />;
       default: return <Activity className="w-4 h-4 text-blue-500" />;
     }
+  };
+  
+  const getMoodEmoji = (mood: number) => {
+    if (mood >= 8) return '😄';
+    if (mood >= 6) return '🙂';
+    if (mood >= 4) return '😐';
+    return '�';
   };
 
   if (isLoading) return <div>Loading dashboard...</div>;
@@ -160,15 +241,15 @@ const CounselorDashboard: React.FC<CounselorDashboardProps> = ({ user }) => {
               <div
                 key={patient.id}
                 className={`p-6 cursor-pointer transition-colors ${
-                  selectedPatient === patient.id ? 'bg-blue-50' : 'hover:bg-gray-50'
+                  selectedPatient?.id === patient.id ? 'bg-blue-50' : 'hover:bg-gray-50'
                 }`}
-                onClick={() => setSelectedPatient(patient.id)}
+                onClick={() => handlePatientClick(patient)}
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-4">
                     <div className="w-12 h-12 bg-gradient-to-br from-purple-400 to-pink-400 rounded-full flex items-center justify-center">
                       <span className="text-white font-medium">
-                        {patient.name.split(' ').map(n => n[0]).join('')}
+                        {patient.name.charAt(0)}
                       </span>
                     </div>
                     <div>
@@ -236,14 +317,14 @@ const CounselorDashboard: React.FC<CounselorDashboardProps> = ({ user }) => {
         </div>
       </div>
 
-      {/* Patient Detail Modal (This part will need a dedicated API call to populate) */}
+      {/* Patient Detail Modal */}
       {selectedPatient && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[80vh] overflow-y-auto">
             <div className="p-6 border-b border-gray-100">
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-semibold text-gray-900">
-                  {patients.find(p => p.id === selectedPatient)?.name} - Patient Details
+                  {selectedPatient?.name} - Patient Details
                 </h2>
                 <button
                   onClick={() => setSelectedPatient(null)}
@@ -257,48 +338,115 @@ const CounselorDashboard: React.FC<CounselorDashboardProps> = ({ user }) => {
             </div>
             
             <div className="p-6 space-y-6">
-              {/* This section still uses hard-coded demo data.
-              To make this dynamic, you'll need another API call to get details for the `selectedPatient`. */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-4 bg-blue-50 rounded-lg">
-                  <h3 className="font-medium text-blue-900 mb-1">Weekly Average Mood</h3>
-                  <p className="text-2xl font-bold text-blue-600">7.2/10</p>
-                  <p className="text-sm text-blue-600">↑ 0.3 from last week</p>
-                </div>
-                <div className="p-4 bg-green-50 rounded-lg">
-                  <h3 className="font-medium text-green-900 mb-1">Current Streak</h3>
-                  <p className="text-2xl font-bold text-green-600">14 days</p>
-                  <p className="text-sm text-green-600">Personal best!</p>
-                </div>
-              </div>
-              
-              <div>
-                <h3 className="font-medium text-gray-900 mb-3">Recent Journal Insights</h3>
-                <div className="space-y-2 text-sm text-gray-600">
-                  <p>• Patient expressing more gratitude in daily entries</p>
-                  <p>• Work stress mentioned 3 times this week</p>
-                  <p>• Sleep quality improving (mentioned 5 times)</p>
-                  <p>• Social activities increasing</p>
-                </div>
-              </div>
-              
-              <div>
-                <h3 className="font-medium text-gray-900 mb-3">Recommended Session Topics</h3>
-                <div className="space-y-2">
-                  <div className="px-3 py-2 bg-yellow-50 border border-yellow-200 rounded-lg">
-                    <p className="text-sm text-yellow-800">Explore work stress coping strategies</p>
+              {isDetailsLoading && <div className="text-center text-gray-500">Loading patient data...</div>}
+              {selectedPatientDetails && selectedPatient.data_access_granted ? (
+                <>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="p-4 bg-blue-50 rounded-lg">
+                    <h3 className="font-medium text-blue-900 mb-1">Last Mood</h3>
+                    <p className="text-2xl font-bold text-blue-600">{selectedPatientDetails.mood_entries[0]?.mood || 'N/A'}/10</p>
+                    <p className="text-sm text-blue-600">{new Date(selectedPatientDetails.mood_entries[0]?.created_at).toLocaleDateString()}</p>
                   </div>
-                  <div className="px-3 py-2 bg-green-50 border border-green-200 rounded-lg">
-                    <p className="text-sm text-green-800">Reinforce positive sleep hygiene habits</p>
-                  </div>
-                  <div className="px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg">
-                    <p className="text-sm text-blue-800">Discuss increased social engagement</p>
+                  <div className="p-4 bg-green-50 rounded-lg">
+                    <h3 className="font-medium text-green-900 mb-1">Active Goals</h3>
+                    <p className="text-2xl font-bold text-green-600">{selectedPatientDetails.goals?.filter(g => !g.is_completed).length}</p>
+                    <p className="text-sm text-green-600">Patient's active goals</p>
                   </div>
                 </div>
-              </div>
+                
+                <div>
+                  <h3 className="font-medium text-gray-900 mb-3">Recent Journal Entries</h3>
+                  <div className="space-y-2">
+                    {(selectedPatientDetails.journal_entries || []).slice(0, 3).map((entry, index) => (
+                      <div key={index} className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg">
+                        <h4 className="font-medium text-sm mb-1">{entry.title}</h4>
+                        <p className="text-xs text-gray-600 line-clamp-2">{entry.content}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                
+                <div>
+                  <h3 className="font-medium text-gray-900 mb-3">Suggested Topics</h3>
+                  <div className="space-y-2">
+                     {/* Simplified insight generation for demo */}
+                     <div className="px-3 py-2 bg-yellow-50 border border-yellow-200 rounded-lg">
+                       <p className="text-sm text-yellow-800">Discuss recent mood fluctuations and triggers</p>
+                     </div>
+                  </div>
+                </div>
+                </>
+              ) : (
+                <div className="text-center py-10 bg-gray-50 rounded-lg">
+                  <Heart className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                  <p className="text-gray-600">Patient has not granted consent to view their data yet.</p>
+                </div>
+              )}
+            </div>
+            <div className="p-6 border-t border-gray-100 flex justify-end">
+              <button
+                onClick={() => {
+                  setShowSendMessageModal(true);
+                  setSelectedPatient(selectedPatient); // Make sure patient context is carried over
+                }}
+                className="px-6 py-3 bg-blue-500 text-white rounded-xl font-medium hover:bg-blue-600 transition-colors"
+              >
+                <Send className="w-4 h-4 inline mr-2" />
+                Send Nudge
+              </button>
             </div>
           </div>
         </div>
+      )}
+      
+      {/* 💥 NEW Send Message Modal 💥 */}
+      {showSendMessageModal && selectedPatient && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-2xl max-w-md w-full p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xl font-semibold text-gray-900">
+                  Send Message to {selectedPatient.name}
+                </h3>
+                <button
+                  onClick={() => setShowSendMessageModal(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <form onSubmit={handleSendMessage} className="space-y-4">
+                <textarea
+                  value={messageText}
+                  onChange={(e) => setMessageText(e.target.value)}
+                  placeholder="Type your message here..."
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors resize-none"
+                  rows={4}
+                  required
+                />
+                
+                {sendSuccess && <div className="p-3 bg-green-100 text-green-700 rounded-lg">{sendSuccess}</div>}
+                {error && <div className="p-3 bg-red-100 text-red-700 rounded-lg">{error}</div>}
+
+                <div className="flex justify-end space-x-3">
+                  <button
+                    type="submit"
+                    className="px-4 py-2 bg-gradient-to-r from-blue-500 to-green-500 text-white rounded-xl font-medium hover:from-blue-600 hover:to-green-600 transition-all disabled:opacity-50"
+                    disabled={isSending || !messageText.trim()}
+                  >
+                    {isSending ? 'Sending...' : (
+                      <>
+                        <Send className="w-4 h-4 inline mr-2" />
+                        Send Message
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
       )}
     </div>
   );

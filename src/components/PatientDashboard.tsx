@@ -1,25 +1,26 @@
 import React, { useState, useEffect } from 'react';
-import { Heart, MessageCircle, Target, TrendingUp, Award, Calendar, Activity, Smile } from 'lucide-react';
+import { Heart, MessageCircle, Target, TrendingUp, Award, Calendar, Activity, Smile, BookOpen, X, Users } from 'lucide-react';
 import { User } from '../types';
 import MoodTracker from './MoodTracker';
 import AIChat from './AIChat';
 import GoalTracker from './GoalTracker';
 import WeeklyProgress from './WeeklyProgress';
+import Journaling from './Journaling';
 
 interface PatientDashboardProps {
-  user: User;
+    user: User;
 }
 
-// Define the shape of the data we expect from the backend
+// 💥 Updated interface with the new flag from the backend
 interface DashboardData {
-    moodEntries: { created_at: string; mood: number; notes: string }[];
-    journalEntries: { created_at: string; title: string; content: string }[];
+    mood_entries: { created_at: string; mood: number; notes: string }[];
+    journal_entries: { created_at: string; title: string; content: string }[];
     goals: { id: string; is_completed: boolean }[];
-    // These will be calculated on the backend
     currentStreak?: number;
     todaysMood?: number;
     weeklyGoals?: number;
     wellnessScore?: number;
+    needs_counselor?: boolean;
 }
 
 const PatientDashboard: React.FC<PatientDashboardProps> = ({ user }) => {
@@ -27,38 +28,89 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user }) => {
     const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    // 💥 New state for the consent modal
+    const [showConsentModal, setShowConsentModal] = useState(false);
+    // 💥 New state for data access permission
+    const [giveDataAccess, setGiveDataAccess] = useState(true);
 
     const tabs = [
         { id: 'overview', label: 'Overview', icon: TrendingUp },
         { id: 'mood', label: 'Mood Tracker', icon: Heart },
+        { id: 'journal', label: 'Journal', icon: BookOpen },
         { id: 'chat', label: 'Chat with Kai', icon: MessageCircle },
         { id: 'goals', label: 'My Goals', icon: Target },
         { id: 'progress', label: 'Weekly Report', icon: Activity }
     ];
 
-    useEffect(() => {
-        const fetchDashboardData = async () => {
-            setIsLoading(true);
-            setError(null);
-            try {
-                const response = await fetch(`http://localhost/ai_companion_backend/api/dashboard.php?user_id=${user.id}`);
-                if (!response.ok) {
-                    throw new Error('Failed to fetch dashboard data.');
-                }
-                const data = await response.json();
-                setDashboardData(data);
-            } catch (err) {
-                console.error("API call failed:", err);
-                setError("Failed to load dashboard data. Please try again.");
-            } finally {
-                setIsLoading(false);
+    const fetchDashboardData = async () => {
+        setIsLoading(true);
+        setError(null);
+        try {
+            const response = await fetch(`http://localhost/ai_companion_backend/api/dashboard.php?user_id=${user.id}`);
+            if (!response.ok) {
+                throw new Error('Failed to fetch dashboard data.');
             }
-        };
+            const data = await response.json();
+            setDashboardData(data);
+            // 💥 Check the flag from the backend and show the modal if needed
+            if (data.needs_counselor) { 
+                setShowConsentModal(true);
+            }
+        } catch (err) {
+            console.error("API call failed:", err);
+            setError("Failed to load dashboard data. Please try again.");
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
+    useEffect(() => {
         if (user && user.id) {
             fetchDashboardData();
         }
     }, [user.id]);
+
+    // 💥 New function to handle the patient's consent
+    const handleConsent = async (consent: boolean) => {
+        setShowConsentModal(false);
+        if (consent) {
+            try {
+                const response = await fetch('http://localhost/ai_companion_backend/api/patient_consent.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        user_id: user.id,
+                        consent: true,
+                        data_access: giveDataAccess
+                    }),
+                });
+                const result = await response.json();
+                if (!response.ok) {
+                    throw new Error(result.message || 'Assignment failed.');
+                }
+                console.log(result.message);
+                // Re-fetch dashboard data to update the UI
+                fetchDashboardData();
+            } catch (err: any) {
+                console.error('Consent submission failed:', err);
+                setError(err.message || "Failed to submit consent.");
+            }
+        } else {
+            // Reset the flag on the backend if consent is denied
+            try {
+                await fetch('http://localhost/ai_companion_backend/api/patient_consent.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        user_id: user.id,
+                        consent: false
+                    }),
+                });
+            } catch (err) {
+                console.error("Error clearing needs_counselor flag:", err);
+            }
+        }
+    };
 
     const getMoodEmoji = (mood: number) => {
         if (mood >= 8) return '😄';
@@ -66,7 +118,6 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user }) => {
         if (mood >= 4) return '😐';
         return '😞';
     };
-
     const getMoodColor = (mood: number) => {
         if (mood >= 8) return 'bg-green-400';
         if (mood >= 6) return 'bg-lime-400';
@@ -74,29 +125,26 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user }) => {
         return 'bg-red-400';
     };
 
-    if (isLoading || !dashboardData) {
-      return <div className="text-center py-10 text-gray-500">Loading your dashboard...</div>;
+    if (isLoading) {
+        return <div className="text-center py-10 text-gray-500">Loading your dashboard...</div>;
     }
-
     if (error) {
-      return <div className="text-center py-10 text-red-500">{error}</div>;
+        return <div className="text-center py-10 text-red-500">{error}</div>;
     }
 
-    // Combine recent moods and journal entries for the activity feed
     const allActivities = [
-    ...(dashboardData?.mood_entries.map(entry => ({
-        time: new Date(entry.created_at).toLocaleDateString(),
-        activity: `Mood entry: ${getMoodEmoji(entry.mood)} (${entry.mood}/10)`,
-        mood: entry.mood >= 6 ? 'positive' : entry.mood <= 4 ? 'negative' : 'neutral'
-    })) || []),
-    ...(dashboardData?.journal_entries.map(entry => ({
-        time: new Date(entry.created_at).toLocaleDateString(),
-        activity: `Journal entry: "${entry.content.substring(0, 30)}..."`,
-        mood: 'neutral'
-    })) || [])
-].sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+        ...(dashboardData?.mood_entries.map(entry => ({
+            time: new Date(entry.created_at).toLocaleDateString(),
+            activity: `Mood entry: ${getMoodEmoji(entry.mood)} (${entry.mood}/10)`,
+            mood: entry.mood >= 6 ? 'positive' : entry.mood <= 4 ? 'negative' : 'neutral'
+        })) || []),
+        ...(dashboardData?.journal_entries.map(entry => ({
+            time: new Date(entry.created_at).toLocaleDateString(),
+            activity: `Journal entry: "${entry.content.substring(0, 30)}..."`,
+            mood: 'neutral'
+        })) || [])
+    ].sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
 
-    // Prepare quick stats with real data
     const quickStats = [
         {
             title: 'Current Streak',
@@ -223,7 +271,15 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user }) => {
                                     <MessageCircle className="w-6 h-6 text-blue-500 mb-2" />
                                     <div className="text-sm font-medium text-blue-700">Chat with Kai</div>
                                 </button>
-
+                                
+                                <button
+                                    onClick={() => setActiveTab('journal')}
+                                    className="p-4 bg-gradient-to-br from-yellow-50 to-yellow-100 border border-yellow-200 rounded-lg hover:from-yellow-100 hover:to-yellow-200 transition-colors"
+                                >
+                                    <BookOpen className="w-6 h-6 text-yellow-500 mb-2" />
+                                    <div className="text-sm font-medium text-yellow-700">New Entry</div>
+                                </button>
+                                
                                 <button
                                     onClick={() => setActiveTab('goals')}
                                     className="p-4 bg-gradient-to-br from-green-50 to-green-100 border border-green-200 rounded-lg hover:from-green-100 hover:to-green-200 transition-colors"
@@ -231,21 +287,57 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user }) => {
                                     <Target className="w-6 h-6 text-green-500 mb-2" />
                                     <div className="text-sm font-medium text-green-700">Check Goals</div>
                                 </button>
-
-                                <button className="p-4 bg-gradient-to-br from-purple-50 to-purple-100 border border-purple-200 rounded-lg hover:from-purple-100 hover:to-purple-200 transition-colors">
-                                    <Activity className="w-6 h-6 text-purple-500 mb-2" />
-                                    <div className="text-sm font-medium text-purple-700">Breathing</div>
-                                </button>
                             </div>
                         </div>
                     </div>
                 )}
-
+                {activeTab === 'journal' && <Journaling user={user} />}
                 {activeTab === 'mood' && <MoodTracker user={user} />}
                 {activeTab === 'chat' && <AIChat user={user} />}
                 {activeTab === 'goals' && <GoalTracker user={user} />}
                 {activeTab === 'progress' && <WeeklyProgress user={user} />}
             </div>
+            {/* 💥 NEW Consent Modal 💥 */}
+            {showConsentModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                    <div className="bg-white rounded-2xl max-w-lg w-full p-6 text-center">
+                        <div className="mb-6">
+                            <Users className="w-16 h-16 text-blue-500 mx-auto mb-4" />
+                            <h3 className="text-2xl font-bold text-gray-900 mb-2">We've Noticed a Pattern</h3>
+                            <p className="text-gray-600">
+                                Your recent mood logs and emotional patterns suggest you might benefit from the support of a human counselor. Would you like to be assigned one?
+                            </p>
+                        </div>
+                        <div className="mb-6">
+                            <label className="flex items-center justify-center space-x-2">
+                                <input
+                                    type="checkbox"
+                                    checked={giveDataAccess}
+                                    onChange={(e) => setGiveDataAccess(e.target.checked)}
+                                    className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                />
+                                <span className="text-sm text-gray-700">
+                                    I give my consent for my counselor to view my journal and mood data.
+                                </span>
+                            </label>
+                        </div>
+                        <div className="flex justify-center space-x-4">
+                            <button
+                                onClick={() => handleConsent(false)}
+                                className="px-6 py-3 border border-gray-300 rounded-xl text-gray-700 hover:bg-gray-50 transition-colors"
+                            >
+                                Not Right Now
+                            </button>
+                            <button
+                                onClick={() => handleConsent(true)}
+                                className="px-6 py-3 bg-blue-500 text-white rounded-xl hover:bg-blue-600 transition-colors"
+                            >
+                                Yes, Assign Me
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
