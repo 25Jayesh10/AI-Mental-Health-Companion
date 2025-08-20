@@ -1,0 +1,241 @@
+import React, { useState } from 'react';
+import { Brain, Heart, Shield, Users, Eye, EyeOff } from 'lucide-react';
+import { User } from '../types';
+
+interface AuthPageProps {
+  onLogin: (user: User) => void;
+}
+
+const AuthPage: React.FC<AuthPageProps> = ({ onLogin }) => {
+  const [isLogin, setIsLogin] = useState(true);
+  const [showPassword, setShowPassword] = useState(false);
+  const [formData, setFormData] = useState({
+    email: '',
+    password: '',
+    name: '',
+    role: 'patient' as 'patient' | 'counselor'
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    // Demo login - create user based on form data
+    const user: User = {
+      id: Math.random().toString(36).substr(2, 9),
+      name: formData.name || formData.email.split('@')[0],
+      email: formData.email,
+      role: formData.role
+    };
+
+    onLogin(user);
+  };
+
+  const demoLogin = (role: 'patient' | 'counselor') => {
+    const user: User = {
+      id: Math.random().toString(36).substr(2, 9),
+      name: role === 'patient' ? 'Sarah Johnson' : 'Dr. Emily Chen',
+      email: role === 'patient' ? 'sarah@example.com' : 'dr.chen@example.com',
+      role
+    };
+    onLogin(user);
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-green-50 flex">
+      {/* Left Side - Branding */}
+      <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-br from-blue-600 to-green-600"></div>
+        <div className="relative z-10 flex flex-col justify-center px-12 text-white">
+          <div className="mb-8">
+            <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center mb-6">
+              <Brain className="w-8 h-8 text-white" />
+            </div>
+            <h1 className="text-4xl font-bold mb-4">Welcome to Kai</h1>
+            <p className="text-xl text-blue-100 mb-8">
+              Your intelligent mental health companion, designed to support your journey to wellness.
+            </p>
+          </div>
+
+          <div className="space-y-6">
+            <div className="flex items-start space-x-4">
+              <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center flex-shrink-0">
+                <Heart className="w-4 h-4 text-white" />
+              </div>
+              <div>
+                <h3 className="font-semibold mb-1">Personalized Support</h3>
+                <p className="text-blue-100 text-sm">AI-powered conversations that adapt to your emotional needs and provide contextual support.</p>
+              </div>
+            </div>
+
+            <div className="flex items-start space-x-4">
+              <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center flex-shrink-0">
+                <Shield className="w-4 h-4 text-white" />
+              </div>
+              <div>
+                <h3 className="font-semibold mb-1">Privacy-First Design</h3>
+                <p className="text-blue-100 text-sm">Your data is encrypted and shared only with your consent. You control your mental health journey.</p>
+              </div>
+            </div>
+
+            <div className="flex items-start space-x-4">
+              <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center flex-shrink-0">
+                <Users className="w-4 h-4 text-white" />
+              </div>
+              <div>
+                <h3 className="font-semibold mb-1">Professional Integration</h3>
+                <p className="text-blue-100 text-sm">Seamless collaboration with your counselor or therapist for comprehensive care.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Right Side - Auth Form */}
+      <div className="w-full lg:w-1/2 flex flex-col justify-center px-8 sm:px-12 lg:px-16">
+        <div className="max-w-md mx-auto w-full">
+          {/* Mobile Logo */}
+          <div className="lg:hidden flex items-center justify-center mb-8">
+            <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-green-500 rounded-xl flex items-center justify-center">
+              <Brain className="w-6 h-6 text-white" />
+            </div>
+            <div className="ml-3">
+              <h1 className="text-2xl font-bold text-gray-900">Kai</h1>
+              <p className="text-sm text-gray-500">Mental Health Companion</p>
+            </div>
+          </div>
+
+          <div className="text-center mb-8">
+            <h2 className="text-3xl font-bold text-gray-900 mb-2">
+              {isLogin ? 'Welcome back' : 'Get started'}
+            </h2>
+            <p className="text-gray-600">
+              {isLogin 
+                ? 'Sign in to continue your mental health journey' 
+                : 'Create your account to begin your wellness journey'
+              }
+            </p>
+          </div>
+
+          {/* Demo Buttons */}
+          <div className="mb-6 p-4 bg-blue-50 rounded-xl">
+            <p className="text-sm text-blue-800 mb-3 font-medium">Quick Demo Access:</p>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => demoLogin('patient')}
+                className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm font-medium"
+              >
+                Demo Patient
+              </button>
+              <button
+                onClick={() => demoLogin('counselor')}
+                className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors text-sm font-medium"
+              >
+                Demo Counselor
+              </button>
+            </div>
+          </div>
+
+          <div className="relative mb-6">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-gray-300"></div>
+            </div>
+            <div className="relative flex justify-center text-sm">
+              <span className="px-2 bg-white text-gray-500">Or continue with</span>
+            </div>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {!isLogin && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                  placeholder="Enter your full name"
+                />
+              </div>
+            )}
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+              <input
+                type="email"
+                value={formData.email}
+                onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                placeholder="Enter your email"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={formData.password}
+                  onChange={(e) => setFormData(prev => ({ ...prev, password: e.target.value }))}
+                  className="w-full px-4 py-3 pr-12 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                  placeholder="Enter your password"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                </button>
+              </div>
+            </div>
+
+            {!isLogin && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Role</label>
+                <select
+                  value={formData.role}
+                  onChange={(e) => setFormData(prev => ({ ...prev, role: e.target.value as 'patient' | 'counselor' }))}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                >
+                  <option value="patient">Patient</option>
+                  <option value="counselor">Counselor</option>
+                </select>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              className="w-full py-3 bg-gradient-to-r from-blue-500 to-green-500 text-white rounded-xl font-medium hover:from-blue-600 hover:to-green-600 transition-all duration-200 transform hover:scale-105"
+            >
+              {isLogin ? 'Sign In' : 'Create Account'}
+            </button>
+          </form>
+
+          <div className="text-center mt-6">
+            <button
+              onClick={() => setIsLogin(!isLogin)}
+              className="text-blue-500 hover:text-blue-600 font-medium"
+            >
+              {isLogin 
+                ? "Don't have an account? Sign up" 
+                : 'Already have an account? Sign in'
+              }
+            </button>
+          </div>
+
+          {isLogin && (
+            <div className="text-center mt-4">
+              <button className="text-gray-500 hover:text-gray-700 text-sm">
+                Forgot your password?
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default AuthPage;
