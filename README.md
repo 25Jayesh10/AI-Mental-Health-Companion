@@ -437,3 +437,9 @@ this assigning of counselor is done based on rule based and availability based. 
 
 
 phase 2 is almost completed, small bugs need to be fixed, and rigourous testing need to be done.
+
+ai chat is not working it is not giving valid responses. need to work on its llm. and get actal valid response.
+
+data is not being updated in the middle section regading streaks, weekly goals, todays mood, wellness score.
+
+recommendatinos for nxt week in weekly report is being printde by default, it shouldnt be happening.
